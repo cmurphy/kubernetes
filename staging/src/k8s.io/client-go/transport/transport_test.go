@@ -46,6 +46,25 @@ uml0obOEy+ON91k+SWTJ3ggmF/U=
 -----END CERTIFICATE-----`
 
 	certData = `-----BEGIN CERTIFICATE-----
+MIIC6DCCAdCgAwIBAgIBCzANBgkqhkiG9w0BAQsFADAbMRkwFwYDVQQDDBBvcGVu
+c2hpZnQtY2xpZW50MCAXDTIwMDIwNDAwMjQyN1oYDzIxMjAwMTExMDAyNDI3WjAb
+MRkwFwYDVQQDDBBvcGVuc2hpZnQtY2xpZW50MIIBIjANBgkqhkiG9w0BAQEFAAOC
+AQ8AMIIBCgKCAQEAq12HPT64ItfDlxJiez2tT9eJ8VKlv/HbhYN2ubvZL+9v0E9i
+wBK2I/Xjxu7KWvVI642LyxMBmaVUMMikhXAwt9/6jaspgOJyf1+NutPFM6OUjikc
+kEf4lTcAnS1tqO6mKiHvSPAVLShinC2d6DbNycTZniXqaGuPaiStzlDX9fYjYcKG
+0hTglhOKw5u2KfXRAolfTUIt9hcktry6lbMpnj8Y5wcb54BXeNdaheJ22NvVSzDv
+RqahNnqYhUKSK7VDAKhrz7JyiMZ9mG+oywCnXnfplwK6X41r4BsK/jMpLsWRBBoi
+ZWtd1SIVqewiih8aXD8k26gorqyxWlLkhzemBwIDAQABozUwMzAOBgNVHQ8BAf8E
+BAMCBaAwEwYDVR0lBAwwCgYIKwYBBQUHAwIwDAYDVR0TAQH/BAIwADANBgkqhkiG
+9w0BAQsFAAOCAQEAi0SpwYQoDXz/gGkVoU9F/A05QtJRmd95DYItzWjDjOBio4bx
+O0OX4U0rNlRuCK4WI5gpYbyEAw6cfQsZy7eRXXf0B/Zi4rIMS6oZ0gJUDeTaWy0E
+Vu7KKv2lMvsuG6h6MpvKRRnjANlYDzbyGrimOQrgfP1pccZ4xdNtvAaRUch9r5IE
+Qhl8LMKOz3xvVfGeK3dlNmbYws/pLhIZmVOCMb5rdczMmIefV42tNKGmdnvwYdfX
+4JEz4Jn4yJ18Y447p/oVS0W92vT6+DzpKKTZKrSThnsjVHFaDHXjHsEE/5uAQ3Zp
+TbWbLDGSjdAoxU+MfkoKd8c3xiyO2pJKvgy/WA==
+-----END CERTIFICATE-----`
+
+	expiredCertData = `-----BEGIN CERTIFICATE-----
 MIIC6jCCAdSgAwIBAgIBCzALBgkqhkiG9w0BAQswIzEhMB8GA1UEAwwYMTAuMTMu
 MTI5LjEwNkAxNDIxMzU5MDU4MB4XDTE1MDExNTIyMDEzMVoXDTE2MDExNTIyMDEz
 MlowGzEZMBcGA1UEAxMQb3BlbnNoaWZ0LWNsaWVudDCCASIwDQYJKoZIhvcNAQEB
@@ -445,6 +464,46 @@ func Test_contextCanceller_RoundTrip(t *testing.T) {
 				}
 				if rt.Req != nil {
 					t.Errorf("want no nested call")
+				}
+			}
+		})
+	}
+}
+
+func TestExpiredCertWarning(t *testing.T) {
+	tests := []struct {
+		name      string
+		cert      []byte
+		expectErr bool
+		expectMsg string
+	}{
+		{
+			name:      "expired cert",
+			cert:      []byte(expiredCertData),
+			expectErr: true,
+			expectMsg: "Certificate for 'openshift-client' is expired according to your host's system clock and may be rejected by the server",
+		},
+		{
+			name:      "unexpired cert",
+			cert:      []byte(certData),
+			expectErr: false,
+			expectMsg: "",
+		},
+	}
+	for _, tt := range tests {
+		c, _ := tls.X509KeyPair(tt.cert, []byte(keyData))
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := checkCertDate(&c)
+			if tt.expectErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				if err.Error() != tt.expectMsg {
+					t.Errorf("error message did not match expected format: wanted '%s' but received '%s'", tt.expectMsg, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
 				}
 			}
 		})
