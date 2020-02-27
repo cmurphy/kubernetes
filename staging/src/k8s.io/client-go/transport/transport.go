@@ -91,12 +91,9 @@ func TLSConfigFor(c *Config) (*tls.Config, error) {
 		if err != nil {
 			return nil, err
 		}
-		err, expiryErr := checkCertDate(&cert)
+		err = warnIfExpired(&cert)
 		if err != nil {
 			return nil, err
-		}
-		if expiryErr != nil {
-			klog.Warning(expiryErr)
 		}
 		staticCert = &cert
 	}
@@ -138,23 +135,22 @@ func TLSConfigFor(c *Config) (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-// checkCertDate checks the NotAfter date of the certificate and compares it to the local system time.
-// It may return one of two errors: it returns the first error if an unexpected error occurs while
-// parsing the certificate, or it returns the second if it finds the cert is expired.
-func checkCertDate(c *tls.Certificate) (error, error) {
+// warnIfExpired checks the NotAfter date of the certificate and compares it to
+// the local system time, logging a warning if the cert is expired.
+func warnIfExpired(c *tls.Certificate) error {
 	now := time.Now()
 	for _, certData := range c.Certificate {
 		parsedCert, err := x509.ParseCertificate(certData)
 		if err != nil {
-			return err, nil
+			return err
 		}
 		notAfter := parsedCert.NotAfter
 		cn := parsedCert.Subject.CommonName
 		if notAfter.Before(now) {
-			return nil, fmt.Errorf("Certificate for '%s' is expired according to your host's system clock and may be rejected by the server", cn)
+			klog.Warningf("Certificate for '%s' is expired according to your host's system clock and may be rejected by the server", cn)
 		}
 	}
-	return nil, nil
+	return nil
 }
 
 // loadTLSFiles copies the data from the CertFile, KeyFile, and CAFile fields into the CertData,
