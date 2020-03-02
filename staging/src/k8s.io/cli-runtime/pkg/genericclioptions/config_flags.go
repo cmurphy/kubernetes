@@ -17,6 +17,9 @@ limitations under the License.
 package genericclioptions
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -33,6 +36,7 @@ import (
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+	"k8s.io/klog"
 )
 
 const (
@@ -190,11 +194,60 @@ func (f *ConfigFlags) toRawKubeConfigLoader() clientcmd.ClientConfig {
 		overrides.Timeout = *f.Timeout
 	}
 
+	var cfg clientConfig
+
 	// we only have an interactive prompt when a password is allowed
 	if f.Password == nil {
-		return &clientConfig{clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, overrides)}
+		cfg = clientConfig{clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, overrides)}
+		warnIfCertExpired(&cfg)
+		return &cfg
 	}
-	return &clientConfig{clientcmd.NewInteractiveDeferredLoadingClientConfig(loadingRules, overrides, os.Stdin)}
+
+	cfg = clientConfig{clientcmd.NewInteractiveDeferredLoadingClientConfig(loadingRules, overrides, os.Stdin)}
+	warnIfCertExpired(&cfg)
+	return &cfg
+}
+
+// warnIfCertExpired checks the NotAfter date of the certificate and compares it to
+// the local system time, logging a warning if the cert is expired.
+func warnIfCertExpired(c *clientConfig) {
+	cfg, _ := (*c).ClientConfig()
+	tlsClientConfig := cfg.TLSClientConfig
+	var certData []byte
+	var keyData []byte
+	var err error
+	if len(tlsClientConfig.CertData) > 0 {
+		certData = cfg.TLSClientConfig.CertData
+	} else if cfg.TLSClientConfig.CertFile != "" {
+		certData, err = ioutil.ReadFile(cfg.TLSClientConfig.CertFile)
+		if err != nil {
+			klog.Error(err)
+		}
+	}
+	if len(tlsClientConfig.KeyData) > 0 {
+		keyData = cfg.TLSClientConfig.KeyData
+	} else if cfg.TLSClientConfig.KeyFile != "" {
+		keyData, err = ioutil.ReadFile(cfg.TLSClientConfig.KeyFile)
+		if err != nil {
+			klog.Error(err)
+		}
+	}
+	cert, err := tls.X509KeyPair(certData, keyData)
+	if err != nil {
+		klog.Error(err)
+	}
+	now := time.Now()
+	for _, c := range cert.Certificate {
+		parsedCert, err := x509.ParseCertificate(c)
+		if err != nil {
+			klog.Error(err)
+		}
+		notAfter := parsedCert.NotAfter
+		cn := parsedCert.Subject.CommonName
+		if notAfter.Before(now) {
+			klog.Warningf("Certificate for '%s' is expired according to your host's system clock and may be rejected by the server", cn)
+		}
+	}
 }
 
 // toRawKubePersistentConfigLoader binds config flag values to config overrides
