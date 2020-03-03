@@ -212,6 +212,9 @@ func (f *ConfigFlags) toRawKubeConfigLoader() clientcmd.ClientConfig {
 // the local system time, logging a warning if the cert is expired.
 func warnIfCertExpired(c *clientConfig) {
 	cfg, _ := (*c).ClientConfig()
+	if cfg == nil {
+		return
+	}
 	tlsClientConfig := cfg.TLSClientConfig
 	var certData []byte
 	var keyData []byte
@@ -223,6 +226,9 @@ func warnIfCertExpired(c *clientConfig) {
 		if err != nil {
 			klog.Error(err)
 		}
+	} else {
+		// client-go will handle cert validation more thoroughly later
+		return
 	}
 	if len(tlsClientConfig.KeyData) > 0 {
 		keyData = cfg.TLSClientConfig.KeyData
@@ -231,10 +237,14 @@ func warnIfCertExpired(c *clientConfig) {
 		if err != nil {
 			klog.Error(err)
 		}
+	} else {
+		// client-go will handle cert validation more thoroughly later
+		return
 	}
 	cert, err := tls.X509KeyPair(certData, keyData)
 	if err != nil {
-		klog.Error(err)
+		// client-go will handle cert validation more thoroughly later
+		return
 	}
 	now := time.Now()
 	for _, c := range cert.Certificate {
