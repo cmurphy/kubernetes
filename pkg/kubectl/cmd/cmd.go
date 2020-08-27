@@ -27,6 +27,7 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -303,6 +304,44 @@ func NewDefaultKubectlCommand() *cobra.Command {
 	return NewDefaultKubectlCommandWithArgs(NewDefaultPluginHandler(plugin.ValidPluginFilenamePrefixes), os.Args, os.Stdin, os.Stdout, os.Stderr)
 }
 
+func lookupFlag(flag string, fs *pflag.FlagSet) *pflag.Flag {
+	flag = strings.SplitN(flag, "=", 2)[0]
+	switch {
+	case strings.HasPrefix(flag, "--"):
+		return fs.Lookup(flag[2:])
+	case strings.HasPrefix(flag, "-") && len(flag) == 2:
+		return fs.ShorthandLookup(flag[1:])
+	default:
+		return nil
+	}
+}
+
+// appendPersistentFlagsAfterCommand relocates global flags to the end of the command line
+// so that plugin commands can be parsed and their binaries located
+func appendPersistentFlagsAfterCommand(args []string, c *cobra.Command) ([]string, error) {
+	flags := c.PersistentFlags()
+	for i := 0; i < len(args); i++ {
+		s := args[i]
+		f := lookupFlag(s, flags)
+		if f == nil && strings.HasPrefix(s, "-") {
+			return nil, fmt.Errorf("unknown flag: %s", s)
+		}
+		if s != "" && f == nil {
+			// Start of the command
+			return append(args[i:], args[:i]...), nil
+		}
+		if !strings.Contains(s, "=") && f.NoOptDefVal == "" {
+			// If '-f arg' then jump past flag and arg, or return if done parsing flags
+			if i >= len(args)-1 {
+				return append(args[i:], args[:i]...), nil
+			}
+			i++
+		}
+		// default case: '-f' or '--flag' with no arg, just skip ahead 1
+	}
+	return args, nil
+}
+
 // NewDefaultKubectlCommandWithArgs creates the `kubectl` command with arguments
 func NewDefaultKubectlCommandWithArgs(pluginHandler PluginHandler, args []string, in io.Reader, out, errout io.Writer) *cobra.Command {
 	cmd := NewKubectlCommand(in, out, errout)
@@ -317,6 +356,11 @@ func NewDefaultKubectlCommandWithArgs(pluginHandler PluginHandler, args []string
 		// only look for suitable extension executables if
 		// the specified command does not already exist
 		if _, _, err := cmd.Find(cmdPathPieces); err != nil {
+			if cmdPathPieces, err = appendPersistentFlagsAfterCommand(cmdPathPieces, cmd); err != nil {
+				fmt.Fprintf(errout, "Error: %v\n", err)
+				fmt.Fprintf(errout, "Run '%v --help' for usage.\n", cmd.CommandPath())
+				os.Exit(1)
+			}
 			if err := HandlePluginCommand(pluginHandler, cmdPathPieces); err != nil {
 				fmt.Fprintf(errout, "%v\n", err)
 				os.Exit(1)

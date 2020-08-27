@@ -74,6 +74,42 @@ func TestKubectlCommandHandlesPlugins(t *testing.T) {
 			expectPluginArgs: []string{"--bar"},
 		},
 		{
+			name:             "test that a plugin executable is found with flags before arg",
+			args:             []string{"kubectl", "--kubeconfig", "bar.conf", "foo"},
+			expectPlugin:     "plugin/testdata/kubectl-foo",
+			expectPluginArgs: []string{"--kubeconfig", "bar"},
+		},
+		{
+			name:             "test that a plugin executable is found with boolean flags before arg",
+			args:             []string{"kubectl", "--insecure-skip-tls-verify", "foo"},
+			expectPlugin:     "plugin/testdata/kubectl-foo",
+			expectPluginArgs: []string{"--insecure-skip-tls-verify"},
+		},
+		{
+			name:             "test that a plugin executable is found with flags with '=' before arg",
+			args:             []string{"kubectl", "--kubeconfig=bar.conf", "foo"},
+			expectPlugin:     "plugin/testdata/kubectl-foo",
+			expectPluginArgs: []string{"--kubeconfig=bar"},
+		},
+		{
+			name:             "test that a plugin executable is found with short flags before arg",
+			args:             []string{"kubectl", "-n", "default", "foo"},
+			expectPlugin:     "plugin/testdata/kubectl-foo",
+			expectPluginArgs: []string{"-n", "default"},
+		},
+		{
+			name:             "test that a plugin executable is found with short flags with '=' before arg",
+			args:             []string{"kubectl", "-n=default", "foo"},
+			expectPlugin:     "plugin/testdata/kubectl-foo",
+			expectPluginArgs: []string{"-n=default"},
+		},
+		{
+			name:             "test that a plugin executable is found with multiple flags before arg",
+			args:             []string{"kubectl", "-n", "default", "--kubeconfig", "bar.conf", "foo"},
+			expectPlugin:     "plugin/testdata/kubectl-foo",
+			expectPluginArgs: []string{"-n", "default", "--kubeconfig", "bar.conf"},
+		},
+		{
 			name: "test that a plugin does not execute over an existing command by the same name",
 			args: []string{"kubectl", "version"},
 		},
